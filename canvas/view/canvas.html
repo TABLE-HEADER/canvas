@@ -43,6 +43,7 @@
 		}
 		</style>
 		<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+		<script src="../js/fill.js"></script>
 		<script type="text/javascript">
 
 			$(function() {
@@ -54,6 +55,9 @@
 				var currentColor = '#800000';
 				var backgroundColor = '#fbe5d6';
 
+				// 描画モード指定
+				var drawmode = 'pencil';
+
 				// 線の太さの記憶
 				var currentPencilWidth = 3;
 				var currentEraserWidth = 20;
@@ -62,6 +66,20 @@
 				context.fillStyle = backgroundColor;
 				context.fillRect(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height'));
 
+				// アンドゥ・リドゥのデータ保持
+				var undoImage = [];
+				var redoImage = [];
+
+				// 範囲選択のデータ保持
+				var selectImage = null;
+				var selectRange = null;
+				var selectMoveStart = null;
+
+				// コピーのデータ保持(保留)
+				var copyImage = null;
+				var copyWidth = null;
+				var copyHeight = null;
+
 				// 初期始点指定
 				var x = null;
 				var y = null;
@@ -69,25 +87,31 @@
 				// ドラッグのフラグ
 				var isDrag = false;
 
+				// 定規フラグ
+				var isRuler = false;
+
+				// カラーパレットの設置
+				const joe = colorjoe.rgb('color-palette', currentColor);
+
 				function draw(dx, dy) {
+
+					// ドラッグ中でない場合、処理を中止
+					if(!isDrag) {
+						return;
+					}
 
 					// 線の指定
 					context.lineCap = 'round';
 					context.lineJoin = 'round';
 
 					// 鉛筆と消しゴムで描画色を変更
-					if($('#eraser').attr('src') == '../img/eraser_selected.png'){
+					if(drawmode == "eraser"){
 						context.strokeStyle = backgroundColor;
 						context.lineWidth = currentEraserWidth;
 					}
 					else {
 						context.strokeStyle = currentColor;
 						context.lineWidth = currentPencilWidth;
-					}
-
-					// ドラッグ中でない場合、処理を中止
-					if(!isDrag) {
-						return;
 					}
 
 					// 線の始点定義
@@ -112,22 +136,105 @@
 
 				// 線の太さ表示
 				function showCircle(dx, dy) {
+
 					circle.lineCap = 'round';
 					circle.lineJoin = 'round';
 					circle.strokeStyle = 'black';
 					circle.lineWidth = 1;
 
-					circle.clearRect(0, 0, $('#line-circle').attr('width'), $('#line-circle').attr('height'));
-					circle.beginPath();
-					var radius;
-					if($('#eraser').attr('src') == '../img/eraser_selected.png'){
-						radius = currentEraserWidth / 2;
+					// 鉛筆または消しゴムモードの場合
+					if(drawmode == "pencil" || drawmode == "eraser"){
+
+						// 線を通常に
+						circle.setLineDash([]);
+
+						// 以前に書いた円を全消し
+						circle.clearRect(0, 0, $('#line-circle').attr('width'), $('#line-circle').attr('height'));
+
+						// 定規モードの場合
+						if(drawmode == "pencil" && isRuler && isDrag) {
+
+							// 線の始点定義
+							if(x === null || y === null) {
+								x = dx;
+								y = dy;
+							}
+
+							// 予想直線を描く
+							circle.beginPath();
+							circle.moveTo(x, y);
+							circle.lineTo(dx, dy);
+							circle.stroke();
+
+						}
+
+						// ポインタを中心に円を描く
+						circle.beginPath();
+						var radius;
+						if(drawmode == "eraser"){
+							radius = currentEraserWidth / 2;
+						}
+						else {
+							radius = currentPencilWidth / 2;
+						}
+						circle.arc(dx, dy, radius, 0, 2 * Math.PI);
+						circle.stroke();
+
 					}
-					else {
-						radius = currentPencilWidth / 2;
+					// 選択モードの場合
+					else if(drawmode == "select"){
+
+						// 選択範囲上にポインタがあるとき、カーソルをポインタに
+						if(selectRange != null && (selectRange[0] <= dx && dx <= selectRange[2]) && (selectRange[1] <= dy && dy <= selectRange[3])){
+							$('#line-circle').css('cursor', 'pointer');
+						}
+						else{
+							$('#line-circle').css('cursor', 'default');
+						}
+
+						// ドラッグ中でない場合、処理を中止
+						if(!isDrag) {
+							return;
+						}
+
+						// 選択範囲を動かしていない場合
+						if(selectMoveStart == null){
+
+							// 長方形を全消し
+							circle.clearRect(0, 0, $('#line-circle').attr('width'), $('#line-circle').attr('height'));
+
+							// 線の始点定義
+							if(x === null || y === null) {
+								x = dx;
+								y = dy;
+							}
+
+							// 破線長方形を描く
+							circle.beginPath();
+							circle.setLineDash([2, 2]);
+							circle.strokeRect(x, y, dx - x, dy - y);
+							circle.stroke();
+
+						}
+
 					}
-					circle.arc(dx, dy, radius, 0, 2 * Math.PI);
-					circle.stroke();
+
+				}
+
+				// スポイト(カラーコードを返す)
+				function spuit(dx, dy) {
+
+					const color = context.getImageData(dx, dy, 1, 1);
+					var hex = "#";
+					for(var i = 0; i < 3; i++){
+						hex += ("0" + color.data[i].toString(16)).slice(-2);
+					}
+					if(hex == "#000000" && color.data[3] == 0){
+						return backgroundColor;
+					}
+					else{
+						return hex;
+					}
 
 				}
 
@@ -136,6 +243,52 @@
 					if(window.confirm("消去しますか？")){
 						context.clearRect(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height'));
 					}
+				}
+
+				// 選択の全解除
+				function selectClearAll() {
+
+					// 長方形を全消し
+					circle.clearRect(0, 0, $('#line-circle').attr('width'), $('#line-circle').attr('height'));
+
+					// select変数の削除
+					selectImage = null;
+					selectRange = null;
+					selectMoveStart = null;
+
+					// x, yをnullに
+					x = null;
+					y = null;
+
+				}
+
+				// カラーコード→rgb変換メソッド
+				function rgb(color) {
+					return [parseInt(color.substr(1, 2), 16), parseInt(color.substr(3, 2), 16), parseInt(color.substr(5, 2), 16)]
+				}
+
+				// 透過メソッド
+				function setTransparent(x, y, width, height) {
+
+					// 背景色を透明(a=00)に指定
+					// まずは背景色のRGBを取得
+					const color = rgb(backgroundColor);
+
+					// コンテクストからイメージデータ取得
+					var image = context.getImageData(x, y, width, height);
+
+					// imageの当該色との絶対値の差が30未満なら、アルファ値を0に
+					for(var i = y; i < height; i++){
+						for(var j = x; j < width; j++){
+							const offset = (i * width + j) * 4;
+							if(Math.abs(color[0] - image.data[offset]) + Math.abs(color[1] - image.data[offset + 1]) + Math.abs(color[2] - image.data[offset + 2]) < 20){
+								image.data[offset + 3] = 0;
+							}
+						}
+					}
+
+					return image;
+
 				}
 
 				// キャンバスの出力
@@ -151,24 +304,7 @@
 
 						// 背景色透過指定がある場合
 						if($('#transparent').prop('checked')){
-
-							// 背景色を透明(a=00)に指定
-							// まずは背景色のRGBを取得
-							const r = parseInt(backgroundColor.substr(1, 2), 16);
-							const g = parseInt(backgroundColor.substr(3, 2), 16);
-							const b = parseInt(backgroundColor.substr(5, 2), 16);
-
-							// キャンバスの当該色との絶対値の差が30未満なら、アルファ値を0に
-							for(var i = 0; i < $('#drawingarea').attr('height'); i++){
-								for(var j = 0; j < $('#drawingarea').attr('width'); j++){
-									const color = context.getImageData(j, i, 1, 1);
-									if(Math.abs(r - color.data[0]) + Math.abs(g - color.data[1]) + Math.abs(b - color.data[2]) < 30){
-										color.data[3] = 0;
-									}
-									context.putImageData(color, j, i);
-								}
-							}
-
+							context.putImageData(setTransparent(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')), 0, 0);
 						}
 
 						// 出力
@@ -194,19 +330,48 @@
 
 					// スポイトの場合、その地点の色を取得してcurrentColorを更新
 					if($('#spuit').attr('src') == '../img/spuit_selected.png'){
-						const color = context.getImageData(dx, dy, 1, 1);
-						var hex = "#";
-						for(var i = 0; i < 3; i++){
-							hex += ("0" + color.data[i].toString(16)).slice(-2);
+						currentColor = spuit(dx, dy);
+						$('.currentColor').css('background-color', currentColor);
+						joe.set(currentColor);
+						return;
+					}
+
+					// 塗りつぶしの場合、塗りつぶし関数を実行
+					if(drawmode == "fill"){
+						saveUndo();
+						try{
+							const image = fill(dx, dy, $('#drawingarea').attr('width'), context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')), rgb(spuit(dx, dy)), rgb(currentColor));
+							context.putImageData(image, 0, 0);
+							return;
 						}
-						if(hex == "#000000" && color.data[3] == 0){
-							currentColor = backgroundColor;
+						catch(e) {
+							if(e instanceof RangeError) {
+								alert("塗りつぶし領域が大きすぎます。\n分割するか、線を閉じてください。");
+							}
+						}
+					}
+
+					// 定規モードの場合、始点を記録
+					if(drawmode == "pencil" && isRuler) {
+						x = dx;
+						y = dy;
+					}
+
+					// 描画開始前、アンドゥ情報を保存
+					if(drawmode != "select") {
+						saveUndo();
+					}
+					else{
+
+						// 選択範囲上にポインタがある
+						if(selectRange != null && (selectRange[0] <= dx && dx <= selectRange[2]) && (selectRange[1] <= dy && dy <= selectRange[3])){
+							selectMoveStart = [dx, dy];
 						}
 						else{
-							currentColor = hex;
+							// 通常クリック時、選択範囲のリセットも重ねて行う
+							selectClearAll();
 						}
-						$('.currentColor').css('background-color', currentColor);
-						return;
+
 					}
 
 					context.beginPath();
@@ -214,9 +379,80 @@
 				}
 
 				// ドラッグの終了
-				function endDrag() {
+				function endDrag(dx, dy) {
+
+					// rulerのとき、直線を引く
+					if(drawmode == "pencil" && isRuler && x != null && y != null) {
+
+						// 線の指定
+						context.lineCap = 'round';
+						context.lineJoin = 'round';
+						context.strokeStyle = currentColor;
+						context.lineWidth = currentPencilWidth;
+
+						context.beginPath();
+						context.moveTo(x, y);
+						context.lineTo(dx, dy);
+						context.stroke();
+
+					}
+
+					// drawmodeがselectのとき
+					if(drawmode == "select") {
+
+						// 選択範囲移動時なら、選択イメージをオフセットだけ移動して貼り付け
+						if(selectRange != null && selectMoveStart != null) {
+
+							// アンドゥ画面の保存
+							saveUndo();
+
+							const offset = [dx - selectMoveStart[0], dy - selectMoveStart[1]];
+							// 既存の選択範囲を塗りつぶしてから
+							circle.clearRect(0, 0, $('#line-circle').attr('width'), $('#line-circle').attr('height'));
+							circle.stroke();
+							context.clearRect(selectRange[0], selectRange[1], selectRange[2] - selectRange[0], selectRange[3] - selectRange[1]);
+							context.stroke();
+							// 描画範囲の移動
+							context.putImageData(selectImage, selectRange[0] + offset[0], selectRange[1] + offset[1]);
+
+							// 選択長方形の位置更新
+							circle.beginPath();
+							circle.setLineDash([2, 2]);
+							circle.strokeRect(selectRange[0] + offset[0], selectRange[1] + offset[1], selectRange[2] - selectRange[0], selectRange[3] - selectRange[1]);
+							circle.stroke();
+
+							// selectImageは更新しなくてよい
+							// selectRangeの更新
+							selectRange = [selectRange[0] + offset[0], selectRange[1] + offset[1], selectRange[2] + offset[0], selectRange[3] + offset[1]];
+
+							// selectMoveStartのリセット
+							selectMoveStart = null;
+
+						}
+						// 範囲選択時なら、選択イメージを透過して保存
+						// (isDrug = trueの場合のみ)
+						else {
+
+							if(x != null && y != null){
+
+								if(x > dx) {
+									[x, dx] = [dx, x];
+								}
+								if(y > dy) {
+									[y, dy] = [dy, y];
+								}
+								selectImage = setTransparent(x, y, dx - x, dy - y);
+								selectRange = [x, y, dx, dy];
+
+							}
+
+						}
+
+					}
+
 					context.closePath();
 					isDrag = false;
+
 					x = null;
 					y = null;
 				}
@@ -226,10 +462,14 @@
 					$('.tools > img').each(function(i, e){
 						$(e).attr('src', '../img/' + $(e).attr('id') + '.png');
 						$('#' + $(e).attr('id') + '_option').css('display', 'none');
+
+						// 選択範囲のリセットも重ねて行う
+						selectClearAll();
 					});
 				}
 				function select() {
 					resetSelect();
+					drawmode = $(this).attr('id');
 					$(this).attr('src', '../img/' + $(this).attr('id') + '_selected.png');
 					$('#' + $(this).attr('id') + '_option').css('display', 'block');
 				}
@@ -238,25 +478,101 @@
 				function initEventHandler() {
 
 					$('#clear')[0].addEventListener('click', clearAll);
+					$('#select_clear')[0].addEventListener('click', selectClearAll);
 					$('#output > button')[0].addEventListener('click', output);
+					for(var c of $('.currentColor')){
+						c.addEventListener('click', e =>{
+							resetSelect();
+							drawmode = 'palette';
+							$("#palette").attr('src', '../img/palette_selected.png');
+							$('#palette_option').css('display', 'block');
+						});
+					}
 					for(var t of $('.tools > img')){
 						t.addEventListener('click', select);
 					}
+					$('#ruler')[0].addEventListener('click', e =>{
+						if(!isRuler){
+							$('#ruler').attr('src', '../img/ruler_selected.png');
+							isRuler = true;
+						}
+						else {
+							$('#ruler').attr('src', '../img/ruler.png');
+							isRuler = false;
+						}
+					});
 
 					$('#canvas')[0].addEventListener('mousedown', e => startDrag(e.offsetX, e.offsetY));
-					window.addEventListener('mouseup', endDrag);
+					window.addEventListener('mouseup', e => endDrag(e.offsetX, e.offsetY));
 					// $('#canvas')[0].addEventListener('mouseout', endDrag);
 					$('#canvas')[0].addEventListener('mousemove', e => {
-						draw(e.offsetX, e.offsetY);
+
+						// select/ruler中はdraw処理しない
+						if(drawmode != 'select' && !(drawmode == 'pencil' && isRuler)){
+							draw(e.offsetX, e.offsetY);
+						}
 						showCircle(e.offsetX, e.offsetY);
 					});
 
 				}
 
+				// アンドゥ情報の格納
+				function saveUndo() {
+
+					// 10件を超えると先頭イメージを削除
+					if(undoImage.length >= 10) {
+						undoImage.shift();
+					}
+
+					// リドゥはアンドゥの直後にしか使えないので、アンドゥ情報の保存時に配列をリセット
+					redoImage.splice(0);
+
+					// アンドゥ盤面の保存
+					undoImage.push(context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')));
+
+				}
+
+				// アンドゥ操作
+				function undo() {
+					if(undoImage.length > 0) {
+						redoImage.push(context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')));
+						context.putImageData(undoImage.pop(), 0, 0);
+
+						// よくわからなくなるので、選択範囲情報も消しておく
+						selectClearAll();
+					}
+				}
+
+				// リドゥ操作
+				function redo() {
+					if(redoImage.length > 0) {
+						undoImage.push(context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')));
+						context.putImageData(redoImage.pop(), 0, 0);
+
+						// よくわからなくなるので、選択範囲情報も消しておく
+						selectClearAll();
+					}
+				}
+
+				// アンドゥの初期化
+				function initUndo() {
+
+					$(document).on('keydown', function(e){
+
+						// console.log('undo:', undoImage, '\nredo:', redoImage);
+
+						if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+							undo();
+						}
+
+						if (e.key === 'y' && (e.ctrlKey || e.metaKey)) {
+							redo();
+						}
+					});
+				}
+
 				// カラーパレットの初期化
 				function initColorPalette() {
-					const joe = colorjoe.rgb('color-palette', currentColor);
-
 					joe.on('done', color =>{
 						currentColor = color.hex();
 						context.strokeStyle = currentColor;
@@ -278,11 +594,22 @@
 					});
 				}
 
+				// 塗りつぶし許容領域の変更
+				function updateFillRange() {
+					$('#fill-range').on('input', function() {
+						fillRange = $(this).val();
+						$('#fill-permit').text(parseInt($(this).val()) / 10);
+					});
+				}
+
 				initEventHandler();
 				initColorPalette();
 
 				updatePencilWidth();
 				updateEraserWidth();
+				updateFillRange();
+
+				initUndo();
 
 				// 初期状態では鉛筆が選択されている
 				$('#pencil').attr('src', '../img/' + $('#pencil').attr('id') + '_selected.png');
@@ -325,11 +652,13 @@
 								<span id="pencil-width">3</span>
 								<br>
 								<div class="currentColor"></div>
+								<img id="ruler" src="../img/ruler.png">
 							</div>
 							<div id="eraser_option">
 								<input id="eraser-range" type="range" value="20" min="1" max="100" step="1">
 								<span id="eraser-width">20</span>
-								<button id="clear">clear</button>
+								<br>
+								<button id="clear">全消し</button>
 							</div>
 							<div id="spuit_option">
 								<div class="currentColor"></div>
@@ -338,14 +667,15 @@
 								<span id="color-palette"></span>
 							</div>
 							<div id="select_option">
-								＜実装予定＞
+								<button id="select_clear">選択範囲の解除</button>
 							</div>
 							<div id="fill_option">
-								＜実装予定＞
+								<input id="fill-range" type="range" value="20" min="0" max="200" step="10">
+								<span id="fill-permit">2</span>
 								<div class="currentColor"></div>
 							</div>
 							<div id="loupe_option">
-								＜実装予定＞
+								＜実装未定＞
 							</div>
 							<div id="option_option">
 								<a id="output"><button>output</button></a>
