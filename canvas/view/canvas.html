@@ -241,7 +241,14 @@
 				// 全消し
 				function clearAll() {
 					if(window.confirm("消去しますか？")){
-						context.clearRect(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height'));
+
+						// 全消し前、アンドゥ情報を保存
+						saveUndo();
+
+						context.fillStyle = backgroundColor;
+						context.fillRect(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height'));
+						// context.clearRect(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height'));
+
 					}
 				}
 
@@ -309,7 +316,6 @@
 
 						// 出力
 						const filename = $('#filename').val() != "" ? $('#filename').val() + ".png" : "output.png";
-						console.log(filename);
 						$('#output').attr({
 							download: filename,
 							href:  $('#drawingarea')[0].toDataURL("image/png")
@@ -320,6 +326,10 @@
 						$('#output > button').text("output");
 						$('#output > button').prop('disabled', false);
 						*/
+
+					}
+					else {
+						$('#output').removeAttr('href');
 
 					}
 
@@ -410,7 +420,9 @@
 							// 既存の選択範囲を塗りつぶしてから
 							circle.clearRect(0, 0, $('#line-circle').attr('width'), $('#line-circle').attr('height'));
 							circle.stroke();
-							context.clearRect(selectRange[0], selectRange[1], selectRange[2] - selectRange[0], selectRange[3] - selectRange[1]);
+							context.fillStyle = backgroundColor;
+							context.fillRect(selectRange[0], selectRange[1], selectRange[2] - selectRange[0], selectRange[3] - selectRange[1]);
+							// context.clearRect(selectRange[0], selectRange[1], selectRange[2] - selectRange[0], selectRange[3] - selectRange[1]);
 							context.stroke();
 							// 描画範囲の移動
 							context.putImageData(selectImage, selectRange[0] + offset[0], selectRange[1] + offset[1]);
