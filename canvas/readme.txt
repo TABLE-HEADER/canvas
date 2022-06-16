@@ -12,9 +12,15 @@
  *					   Copyright (c) 2012 Juho Vepsäläinen Released under the MIT license
  *					   https://github.com/bebraw/colorjoe/blob/master/LICENSE
  *
- * 実行上の注意		：
+ * 実行上の注意		： 本アプリケーションの利用により生じたいかなる損失も、当方は一切の責任を負いかねます。
  * 作成者           ： TABLE-HEADER
  * 更新履歴         ：
+ *					   Ver.1.2 (2022/6/16)
+ *					   … 以下の機能が実装済み。
+ *					    ・複数色表示
+ *					    ・背景色変更機能
+ *					    ・キャンバス読み込み機能
+ *
  *					   Ver.1.1 (2022/6/15)
  *					   … 以下の機能が実装済み。
  *					    ・アンドゥ/リドゥ機能

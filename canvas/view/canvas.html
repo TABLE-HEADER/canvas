@@ -35,9 +35,15 @@
 			height: 220px;
 			padding: 10px;
 		}
-		.currentColor {
-			border: 3px solid grey;
+		.current-color1 {
+			border: 3px solid black;
 			background-color: #800000;
+		}
+		.current-color2 {
+			border: 3px solid grey;
+			background-color: #fbe5d6;
+		}
+		.current-color1, .current-color2 {
 			width: 48px;
 			height: 48px;
 		}
@@ -53,6 +59,8 @@
 
 				// 色の指定
 				var currentColor = '#800000';
+				var currentColor1 = '#800000';
+				var currentColor2 = '#fbe5d6';
 				var backgroundColor = '#fbe5d6';
 
 				// 描画モード指定
@@ -92,6 +100,9 @@
 
 				// カラーパレットの設置
 				const joe = colorjoe.rgb('color-palette', currentColor);
+
+				// 色の選択
+				var selectedColor = 0;
 
 				function draw(dx, dy) {
 
@@ -238,6 +249,38 @@
 
 				}
 
+				// 背景色を2色目に更新
+				function changebg() {
+
+					saveUndo();
+
+					const crcolor = rgb(currentColor2);
+					const bgcolor = rgb(backgroundColor);
+
+					const height = $('#drawingarea').attr('height');
+					const width = $('#drawingarea').attr('width');
+
+					// コンテクストからイメージデータ取得
+					var image = context.getImageData(x, y,width, height);
+
+					// imageの当該色との絶対値の差が20未満なら、アルファ値を0に
+					for(var i = y; i < height; i++){
+						for(var j = x; j < width; j++){
+							const offset = (i * width + j) * 4;
+							if(Math.abs(bgcolor[0] - image.data[offset]) + Math.abs(bgcolor[1] - image.data[offset + 1]) + Math.abs(bgcolor[2] - image.data[offset + 2]) < 20){
+								image.data[offset] = crcolor[0];
+								image.data[offset + 1] = crcolor[1];
+								image.data[offset + 2] = crcolor[2];
+							}
+						}
+					}
+
+					backgroundColor = currentColor2;
+					$('#drawingarea').css('background-color', backgroundColor);
+					context.putImageData(image, 0, 0);
+
+				}
+
 				// 全消し
 				function clearAll() {
 					if(window.confirm("消去しますか？")){
@@ -284,7 +327,7 @@
 					// コンテクストからイメージデータ取得
 					var image = context.getImageData(x, y, width, height);
 
-					// imageの当該色との絶対値の差が30未満なら、アルファ値を0に
+					// imageの当該色との絶対値の差が20未満なら、アルファ値を0に
 					for(var i = y; i < height; i++){
 						for(var j = x; j < width; j++){
 							const offset = (i * width + j) * 4;
@@ -339,11 +382,23 @@
 				function startDrag(dx, dy) {
 
 					// スポイトの場合、その地点の色を取得してcurrentColorを更新
-					if($('#spuit').attr('src') == '../img/spuit_selected.png'){
-						currentColor = spuit(dx, dy);
-						$('.currentColor').css('background-color', currentColor);
-						joe.set(currentColor);
-						return;
+					if(drawmode == "spuit"){
+
+						if(selectedColor == 0){
+							currentColor1 = spuit(dx, dy);
+							$('.current-color1').css('background-color', currentColor1);
+							currentColor = currentColor1;
+							joe.set(currentColor);
+							return;
+						}
+						else {
+							currentColor2 = spuit(dx, dy);
+							$('.current-color2').css('background-color', currentColor2);
+							currentColor = currentColor2;
+							joe.set(currentColor);
+							return;
+						}
+
 					}
 
 					// 塗りつぶしの場合、塗りつぶし関数を実行
@@ -386,6 +441,29 @@
 
 					context.beginPath();
 					isDrag = true;
+				}
+
+				// 右クリック時
+				function rightClick(dx, dy) {
+
+					// スポイトの場合、その地点の色を取得してcurrentColorを更新
+					if(drawmode == "spuit"){
+
+						if(selectedColor == 0){
+							currentColor2 = spuit(dx, dy);
+							$('.current-color2').css('background-color', currentColor2);
+							joe.set(currentColor);
+							return false;
+						}
+						else {
+							currentColor1 = spuit(dx, dy);
+							$('.current-color1').css('background-color', currentColor1);
+							joe.set(currentColor);
+							return false;
+						}
+
+					}
+
 				}
 
 				// ドラッグの終了
@@ -492,12 +570,25 @@
 					$('#clear')[0].addEventListener('click', clearAll);
 					$('#select_clear')[0].addEventListener('click', selectClearAll);
 					$('#output > button')[0].addEventListener('click', output);
-					for(var c of $('.currentColor')){
+					$('#changebg')[0].addEventListener('click', changebg);
+					for(var c of $('.current-color1')){
 						c.addEventListener('click', e =>{
-							resetSelect();
-							drawmode = 'palette';
-							$("#palette").attr('src', '../img/palette_selected.png');
-							$('#palette_option').css('display', 'block');
+							selectedColor = 0;
+							currentColor = currentColor1;
+							context.strokeStyle = currentColor;
+							joe.set(currentColor);
+							$('.current-color1').css('border-color', 'black');
+							$('.current-color2').css('border-color', 'grey');
+						});
+					}
+					for(var c2 of $('.current-color2')){
+						c2.addEventListener('click', e =>{
+							selectedColor = 1;
+							currentColor = currentColor2;
+							context.strokeStyle = currentColor;
+							joe.set(currentColor);
+							$('.current-color1').css('border-color', 'grey');
+							$('.current-color2').css('border-color', 'black');
 						});
 					}
 					for(var t of $('.tools > img')){
@@ -514,16 +605,23 @@
 						}
 					});
 
-					$('#canvas')[0].addEventListener('mousedown', e => startDrag(e.offsetX, e.offsetY));
-					window.addEventListener('mouseup', e => endDrag(e.offsetX, e.offsetY));
+					$('#canvas')[0].addEventListener('mousedown', e => {
+						if(e.which == 1) {
+							startDrag(e.pageX - 33, e.pageY - 33);
+						}
+						else if(e.which == 3) {
+							rightClick(e.pageX - 33, e.pageY - 33);
+						}
+					});
+					window.addEventListener('mouseup', e => endDrag(e.pageX - 33, e.pageY - 33));
+					// window.addEventListener('mouseup', e => endDrag($('#canvas').offset().left, $('#canvas').offset().top));
 					// $('#canvas')[0].addEventListener('mouseout', endDrag);
 					$('#canvas')[0].addEventListener('mousemove', e => {
-
 						// select/ruler中はdraw処理しない
 						if(drawmode != 'select' && !(drawmode == 'pencil' && isRuler)){
-							draw(e.offsetX, e.offsetY);
+							draw(e.pageX - 33, e.pageY - 33);
 						}
-						showCircle(e.offsetX, e.offsetY);
+						showCircle(e.pageX - 33, e.pageY - 33);
 					});
 
 				}
@@ -540,15 +638,24 @@
 					redoImage.splice(0);
 
 					// アンドゥ盤面の保存
-					undoImage.push(context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')));
+					undoImage.push({
+						image: context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')),
+						backgroundColor: backgroundColor
+					});
 
 				}
 
 				// アンドゥ操作
 				function undo() {
 					if(undoImage.length > 0) {
-						redoImage.push(context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')));
-						context.putImageData(undoImage.pop(), 0, 0);
+						redoImage.push({
+							image: context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')),
+							backgroundColor: backgroundColor
+						});
+						const u = undoImage.pop();
+						context.putImageData(u.image, 0, 0);
+						backgroundColor = u.backgroundColor;
+						$('#drawingarea').css('background-color', backgroundColor);
 
 						// よくわからなくなるので、選択範囲情報も消しておく
 						selectClearAll();
@@ -558,8 +665,14 @@
 				// リドゥ操作
 				function redo() {
 					if(redoImage.length > 0) {
-						undoImage.push(context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')));
-						context.putImageData(redoImage.pop(), 0, 0);
+						undoImage.push({
+							image: context.getImageData(0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height')),
+							backgroundColor: backgroundColor
+						});
+						const r = redoImage.pop();
+						context.putImageData(r.image, 0, 0);
+						backgroundColor = r.backgroundColor;
+						$('#drawingarea').css('background-color', backgroundColor);
 
 						// よくわからなくなるので、選択範囲情報も消しておく
 						selectClearAll();
@@ -586,10 +699,20 @@
 				// カラーパレットの初期化
 				function initColorPalette() {
 					joe.on('done', color =>{
-						currentColor = color.hex();
-						context.strokeStyle = currentColor;
-						$('.currentColor').css('background-color', currentColor);
+						if(selectedColor == 0){
+							currentColor1 = color.hex();
+							currentColor = currentColor1;
+							context.strokeStyle = currentColor;
+							$('.current-color1').css('background-color', currentColor1);
+						}
+						else{
+							currentColor2 = color.hex();
+							currentColor = currentColor2;
+							context.strokeStyle = currentColor;
+							$('.current-color2').css('background-color', currentColor2);
+						}
 					});
+
 				}
 
 				// 幅の変更
@@ -614,6 +737,43 @@
 					});
 				}
 
+				// 画像読み込みメソッド初期化
+				function initLoadImage() {
+
+					$("#input").on('input', function() {
+
+						if(this.files.length > 0) {
+
+							if(window.confirm("盤面は上書きされます。ファイルを読み込んでもよろしいですか？")){
+
+								saveUndo();
+								console.log(this.files);
+								var file = this.files[0];
+								$('#filename').val(this.files[0].name.replace(/\.[^/.]+$/, ""));
+
+								// readerのresultプロパティに、データURLとしてエンコードされたファイルデータを格納
+								var reader = new FileReader();
+								reader.readAsDataURL(file);
+
+								reader.onload = function() {
+									var img = new Image();
+									img.src = reader.result;
+									setTimeout(()=>{
+										context.drawImage(img, 0, 0, $('#drawingarea').attr('width'), $('#drawingarea').attr('height'));
+									}, 10);
+
+								}
+							}
+
+						}
+						else {
+							alert("ファイルの読み込みに失敗しました。");
+						}
+
+					});
+
+				}
+
 				initEventHandler();
 				initColorPalette();
 
@@ -622,6 +782,7 @@
 				updateFillRange();
 
 				initUndo();
+				initLoadImage();
 
 				// 初期状態では鉛筆が選択されている
 				$('#pencil').attr('src', '../img/' + $('#pencil').attr('id') + '_selected.png');
@@ -631,7 +792,7 @@
 
 		</script>
 	</head>
-	<body>
+	<body oncontextmenu="return false;">
 
 		<div id="main">
 
@@ -663,7 +824,8 @@
 								<input id="pencil-range" type="range" value="3" min="1" max="100" step="1">
 								<span id="pencil-width">3</span>
 								<br>
-								<div class="currentColor"></div>
+								<div class="current-color1"></div>
+								<div class="current-color2"></div>
 								<img id="ruler" src="../img/ruler.png">
 							</div>
 							<div id="eraser_option">
@@ -673,7 +835,8 @@
 								<button id="clear">全消し</button>
 							</div>
 							<div id="spuit_option">
-								<div class="currentColor"></div>
+								<div class="current-color1"></div>
+								<div class="current-color2"></div>
 							</div>
 							<div id="palette_option">
 								<span id="color-palette"></span>
@@ -684,15 +847,18 @@
 							<div id="fill_option">
 								<input id="fill-range" type="range" value="20" min="0" max="200" step="10">
 								<span id="fill-permit">2</span>
-								<div class="currentColor"></div>
+								<div class="current-color1"></div>
+								<div class="current-color2"></div>
 							</div>
 							<div id="loupe_option">
 								＜実装未定＞
 							</div>
 							<div id="option_option">
-								<a id="output"><button>output</button></a>
-								<p>ファイル名：<input type="text" id="filename">.png</p>
+								<a id="output"><button>出力</button></a>
+								<input type="text" id="filename">.png
 								<p><input type="checkbox" id="transparent">&nbsp;背景を透明にする<br>（時間がかかる場合あり）</p>
+								<button id="changebg">背景色を2色目に更新</button>
+								<p>入力：<br><input type="file" id="input" accept="image/*"></p>
 							</div>
 						</td>
 					<tr>
